@@ -8,18 +8,39 @@ class Connect():
         # connect to db
         self.conn = psycopg2.connect(**settings)
         self.cursor = self.conn.cursor()
+       
+        
+    def check_user(self, name:str, password:str) -> int:
+        # like log in data checking
+        
+        # returns 0 if name or pass is invalid
+        # returns 1 if name or pass is ok
+        # returns 2 if it is superuser
+        
+        self.cursor.execute("SELECT superuser FROM users WHERE username = %s AND password = %s;", (name, password))
+        sup = self.cursor.fetchone()
+        
+        if not sup:
+            return 0
+        if sup[0]:
+            return 2
+        return 1
 
 
     def add_crypto(self, name:str, short_name:str, superuser:bool = False) -> None:
+        # add new cryptocurrency (only for superuser)
         if superuser:
             self.cursor.execute("INSERT INTO cryptocurrencies (name, short_name) VALUES(%s, %s);", (name, short_name))
     
     
     def add_user(self, username:str, password:str) -> None:
+        # register
         self.cursor.execute("INSERT INTO users (username, password) VALUES(%s, %s);", (username, password))
        
        
     def sell(self, user_id:int, first_crupto_id:int, second_crupto_id:int, price:float, value:float) -> None:
+        # sell first_crupto to second_crupto
+        
         # get aviable crypto balance
         self.cursor.execute("SELECT value FROM balance WHERE user_id = %s AND crypto_id = %s;", (user_id, first_crupto_id))
         first_crypto_balance_before = self.cursor.fetchone()[0]
@@ -50,6 +71,8 @@ class Connect():
             
        
     def buy(self, user_id:int, first_crupto_id:int, second_crupto_id:int, price:float, value:float) -> None:
+        # buy first_crupto by second_crupto
+        
         # get aviable crypto balance
         self.cursor.execute("SELECT value FROM balance WHERE user_id = %s AND crypto_id = %s;", (user_id, second_crupto_id))
         second_crypto_balance_before = self.cursor.fetchone()[0]
@@ -80,10 +103,12 @@ class Connect():
             
             
     def save_changes(self) -> None:
+        # just commit
         self.conn.commit()
         
         
     def get_data(self, table:str) -> list:
+        # select all lines from table
         self.cursor.execute("SELECT * FROM %s;" % table)
         return self.cursor.fetchall()
     
