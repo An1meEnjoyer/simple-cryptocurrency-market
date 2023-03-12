@@ -1,8 +1,24 @@
 from fastapi import FastAPI
+from api import Connect
 
 app = FastAPI()
+db = Connect()
 
 
-@app.get("/")
+@app.get('/')
 async def root():
-    return {"message": "Hello World"}
+    return {'message': 'ok'}
+
+
+@app.get('/cryptocurrencies')
+async def cryptocurrencies():
+    return db.get_data('cryptocurrencies')
+
+
+@app.get('/add_crypto')
+async def cryptocurrencies(user_name:str, password:str, crypo_name:str, crypo_short_name:str):
+    if db.check_user(user_name, password) != 2:
+        return {'status': 'fail',
+                'reason': 'invalid account'}
+    db.add_crypto(crypo_name, crypo_short_name, True)
+    return {'status': 'ok'}
