@@ -10,32 +10,54 @@ class Connect():
         self.cursor = self.conn.cursor()
        
         
-    def check_user(self, name:str, password:str) -> int:
-        # like log in data checking
+    def get_data(self, table:str) -> list:
+        # select all lines from table
+        self.cursor.execute("SELECT * FROM %s;" % table)
+        return self.cursor.fetchall()
+    
         
-        # returns 0 if name or pass is invalid
-        # returns 1 if name or pass is ok
-        # returns 2 if it is superuser
-        
-        self.cursor.execute("SELECT superuser FROM users WHERE username = %s AND password = %s;", (name, password))
+    def find_user(self, user_name:str, password:str) -> dict:
+        self.cursor.execute("SELECT id, superuser FROM users WHERE username = %s AND password = %s;", (user_name, password))
         sup = self.cursor.fetchone()
         
         if not sup:
-            return 0
-        if sup[0]:
-            return 2
-        return 1
+            return {'id': 0, 'superuser': 0}
+        return {'id': sup[0], 'superuser': sup[1]}
+    
 
+    def get_bal(self, user_name:str, password:str) -> dict:
+        user_id =  self.find_user(user_name, password)['id']
+        if not user_id:
+            return {}
+        self.cursor.execute("SELECT crypto_id, value FROM balance WHERE user_id = %s" % (user_id))
+        
+        pretty_bal = {}
+        for i in self.cursor.fetchall():
+            pretty_bal[i[0].strip()] = float(i[1])
+            
+        return pretty_bal
+            
 
-    def add_crypto(self, name:str, short_name:str, superuser:bool = False) -> None:
+    def set_bal(self, user_name:str, password:str, crypto_id:str = 'USDT', value:float = 100):
+        # add balance
+        user = self.find_user(user_name, password)
+        if not user:
+            return None
+        self.cursor.execute("INSERT INTO balance (user_id, crypto_id, value) VALUES (%s, %s, %s);", (user['id'], crypto_id, value))
+        self.save_changes()
+        
+
+    def add_crypto(self, user_name:str, password:str, crypto_name:str, short_name:str) -> None:
         # add new cryptocurrency (only for superuser)
-        if superuser:
-            self.cursor.execute("INSERT INTO cryptocurrencies (name, short_name) VALUES(%s, %s);", (name, short_name))
+        if self.find_user(user_name, password)['superuser']:
+            self.cursor.execute("INSERT INTO cryptocurrencies (name, short_name) VALUES (%s, %s);", (crypto_name, short_name))
+            self.save_changes()
     
     
     def add_user(self, username:str, password:str) -> None:
         # register
         self.cursor.execute("INSERT INTO users (username, password) VALUES(%s, %s);", (username, password))
+        self.save_changes()
        
        
     def sell(self, user_id:int, first_crupto_id:int, second_crupto_id:int, price:float, value:float) -> None:
@@ -100,17 +122,11 @@ class Connect():
                                     (second_crypto_balance_after, user_id, second_crupto_id))
             
             self.save_changes()
-            
-            
+        
+    
     def save_changes(self) -> None:
         # just commit
         self.conn.commit()
-        
-        
-    def get_data(self, table:str) -> list:
-        # select all lines from table
-        self.cursor.execute("SELECT * FROM %s;" % table)
-        return self.cursor.fetchall()
     
     
     def __dell__(self) -> None:
