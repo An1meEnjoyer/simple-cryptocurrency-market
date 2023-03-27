@@ -1,6 +1,8 @@
 import psycopg2
+import json
+import requests
 
-from SETTINGS import POSTGRESS_SETTINGS
+from SETTINGS import POSTGRESS_SETTINGS, CRYPTO_API_URL
 
 
 class Connect():
@@ -26,11 +28,11 @@ class Connect():
     # - - - - - - - - - - - - - - - - - - USERS FUNCS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     def find_user(self, user_name:str, password:str) -> dict:
         self.cursor.execute("SELECT id, superuser FROM users WHERE username = %s AND password = %s;", (user_name, password))
-        sup = self.cursor.fetchone()
+        user = self.cursor.fetchone()
         
-        if not sup:
+        if not user:
             return {'id': 0, 'superuser': 0}
-        return {'id': sup[0], 'superuser': sup[1]}
+        return {'id': user[0], 'superuser': user[1]}
     
     
     def add_user(self, username:str, password:str) -> None:
@@ -41,101 +43,168 @@ class Connect():
     
     
     # - - - - - - - - - - - - - - - - - - CRYPTO  FUNCS - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    def add_crypto(self, user_name:str, password:str, crypto_name:str, short_name:str) -> None:
+    def add_crypto(self, user_name:str, password:str, crypto_name:str, short_name:str) -> dict:
         # add new cryptocurrency (only for superuser)
-        if self.find_user(user_name, password)['superuser']:
-            self.cursor.execute("INSERT INTO cryptocurrencies (name, short_name) VALUES (%s, %s);", (crypto_name, short_name))
-            self.save_changes()
+        if not self.find_user(user_name, password)['superuser']:
+            return {'status': 'invalid account'}
+        
+        self.cursor.execute("INSERT INTO cryptocurrencies (name, short_name) VALUES (%s, %s);", (crypto_name, short_name))
+        self.save_changes()
+        return {'status': 'ok'}
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     
        
     # - - - - - - - - - - - - - - - - - - BALANCE FUNCS - - - - - - - - - - - - - - - - - - - - - - - - - - -
     def get_bal(self, user_name:str, password:str) -> dict:
-        user_id =  self.find_user(user_name, password)['id']
-        if not user_id:
-            return {}
-        self.cursor.execute("SELECT crypto_id, value FROM balance WHERE user_id = %s" % (user_id))
+        user = self.find_user(user_name, password)
+        if not user['id']:
+            return {'status': 'invalid account'}
+        self.cursor.execute("SELECT crypto_id, value FROM balance WHERE user_id = %s" % (user['id']))
         
-        pretty_bal = {}
+        pretty_bal = {'status': 'ok'}
         for i in self.cursor.fetchall():
             pretty_bal[i[0].strip()] = float(i[1])
             
         return pretty_bal
     
-
-    def set_bal(self, user_name:str, password:str, crypto_id:str = 'USDT', value:float = 100) -> None:
-        # add balance
+    
+    def create_bal(self, user_name:str, password:str, crypto_id:str, balance:float) -> dict:
         user = self.find_user(user_name, password)
         if not user:
-            return None
-        self.cursor.execute("INSERT INTO balance (user_id, crypto_id, value) VALUES (%s, %s, %s);", (user['id'], crypto_id, value))
+            return {'status': 'invalid account'}
+        
+        try:
+            self.cursor.execute("INSERT INTO balance (user_id, crypto_id, value) VALUES (%s, %s, %s);",
+                                (user['id'], crypto_id, balance))
+        except Exception as e:
+            return {'status': str(e)}
         self.save_changes()
+        return {'status': 'ok'}
+        
+        
+    def update_bal(self, user_name:str, password:str, crypto_id:str, balance:float) -> dict:
+        user = self.find_user(user_name, password)
+        if not user:
+            return {'status': 'invalid account'}
+        
+        try:
+            self.cursor.execute(""" UPDATE balance SET value = %s
+                                    WHERE user_id = %s AND crypto_id = %s;""",
+                                    (balance, user['id'], crypto_id))
+        except Exception as e:
+            return {'status': str(e)}
+        
+        self.save_changes()
+        return {'status': 'ok'}
+
+
+    def set_bal(self, user_name:str, password:str, crypto_id:str = 'USDT', balance:float = 100) -> dict:
+        # set balance
+        user = self.find_user(user_name, password)
+        if not user:
+            return {'status': 'invalid account'}
+        
+        if crypto_id not in self.get_bal(user_name, password):
+            self.create_bal(user_name, password, crypto_id, balance)
+        else:
+            self.update_bal(user_name, password, crypto_id, balance)
+            
+        self.save_changes()
+        return {'status': 'ok'}
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
         
         
     # - - - - - - - - - - - - - - - - - - SELL/BUY  FUNCS - - - - - - - - - - - - - - - - - - - - - - - - - -
-    def sell(self, user_id:int, first_crupto_id:int, second_crupto_id:int, price:float, value:float) -> None:
-        # sell first_crupto to second_crupto
+    def sell(self, user_name:str, password:str, first_crypto:str, second_crypto:str, value:float) -> dict:
+        # sell first_crypto to second_crypto
         
-        # get aviable crypto balance
-        self.cursor.execute("SELECT value FROM balance WHERE user_id = %s AND crypto_id = %s;", (user_id, first_crupto_id))
-        first_crypto_balance_before = self.cursor.fetchone()[0]
+        user = self.find_user(user_name, password)
+        if not user:
+            return {'status': 'invalid account'}
         
-        if first_crypto_balance_before >= value:
-            first_crypto_balance_after = first_crypto_balance_before - value
-            
-            self.cursor.execute("SELECT value FROM balance WHERE user_id = %s AND crypto_id = %s;", (user_id, second_crupto_id))
-            second_crypto_balance_before = self.cursor.fetchone()
-            
-            second_crypto_balance_after = value*price
-            if second_crypto_balance_before:
-                second_crypto_balance_after += second_crypto_balance_before[0]
-            else:
-                self.cursor.execute("INSERT INTO balance (user_id, crypto_id, value) VALUES (%s, %s, 0);", (user_id, second_crupto_id))
-            
-            self.cursor.execute(""" UPDATE balance
-                                    SET value = %s
-                                    WHERE user_id = %s AND crypto_id = %s;""",
-                                    (first_crypto_balance_after, user_id, first_crupto_id))
-            
-            self.cursor.execute(""" UPDATE balance
-                                    SET value = %s
-                                    WHERE user_id = %s AND crypto_id = %s;""",
-                                    (second_crypto_balance_after, user_id, second_crupto_id))
-            
-            self.save_changes()
-            
-       
-    def buy(self, user_id:int, first_crupto_id:int, second_crupto_id:int, price:float, value:float) -> None:
-        # buy first_crupto by second_crupto
+        bal = self.get_bal(user_name, password)
         
-        # get aviable crypto balance
-        self.cursor.execute("SELECT value FROM balance WHERE user_id = %s AND crypto_id = %s;", (user_id, second_crupto_id))
-        second_crypto_balance_before = self.cursor.fetchone()[0]
+        # gets first crypto balance
+        # if not exists u cannot sell
+        if first_crypto not in bal:
+            return {'status': 'not enough coins'}
+        first_balance = bal[first_crypto]
         
-        if second_crypto_balance_before >= value*price:
-            second_crypto_balance_after = second_crypto_balance_before - value*price
+        # gets second crypto balance
+        if second_crypto in bal:
+            second_balance = bal[second_crypto]
+        else:
+            second_balance = 0
+            self.create_bal(user_name, password, second_crypto, second_balance)
             
-            self.cursor.execute("SELECT value FROM balance WHERE user_id = %s AND crypto_id = %s;", (user_id, first_crupto_id))
-            first_crypto_balance_before = self.cursor.fetchone()
+        price = get_price(first_crypto, second_crypto)
+        if not price:
+            return {'status': 'wrong pair'}
+        
+        will_get_second = price * value
+        # changes balance
+        first_balance -= value
+        if second_balance < 0:
+            return {'status': 'not enough coins'}
+        
+        second_balance += will_get_second
+        
+        # saves
+        answer = self.update_bal(user_name, password, second_crypto, second_balance)
+        if answer['status'] != 'ok':
+            return answer['status']
+        
+        answer = self.update_bal(user_name, password, first_crypto, first_balance)
+        if answer['status'] != 'ok':
+            return answer['status']
+        
+        return {'status': 'ok'}
+        
+
+    def buy(self, user_name:str, password:str, first_crypto:str, second_crypto:str, value:float) -> None:
+        # buy first_crypto by second_crypto
+        
+        user = self.find_user(user_name, password)
+        if not user:
+            return {'status': 'invalid account'}
+        
+        bal = self.get_bal(user_name, password)
+        
+        # gets second crypto balance
+        # if not exists u cannot buy
+        if second_crypto not in bal:
+            return {'status': 'not enough coins'}
+        second_balance = bal[second_crypto]
+        
+        # gets first crypto balance
+        if first_crypto in bal:
+            first_balance = bal[first_crypto]
+        else:
+            first_balance = 0
+            self.create_bal(user_name, password, first_crypto, first_balance)
             
-            first_crypto_balance_after = value
-            if first_crypto_balance_before:
-                first_crypto_balance_after += first_crypto_balance_before[0]
-            else:
-                self.cursor.execute("INSERT INTO balance (user_id, crypto_id, value) VALUES (%s, %s, 0);", (user_id, first_crupto_id))
-            
-            self.cursor.execute(""" UPDATE balance
-                                    SET value = %s
-                                    WHERE user_id = %s AND crypto_id = %s;""",
-                                    (first_crypto_balance_after, user_id, first_crupto_id))
-            
-            self.cursor.execute(""" UPDATE balance
-                                    SET value = %s
-                                    WHERE user_id = %s AND crypto_id = %s;""",
-                                    (second_crypto_balance_after, user_id, second_crupto_id))
-            
-            self.save_changes()
+        price = get_price(first_crypto, second_crypto)
+        if not price:
+            return {'status': 'wrong pair'}
+        
+        need_second = price * value
+        # changes balance
+        second_balance -= need_second
+        if second_balance < 0:
+            return {'status': 'not enough coins'}
+        
+        first_balance += value
+        
+        # saves
+        answer = self.update_bal(user_name, password, first_crypto, first_balance)
+        if answer['status'] != 'ok':
+            return answer['status']
+        
+        answer = self.update_bal(user_name, password, second_crypto, second_balance)
+        if answer['status'] != 'ok':
+            return answer['status']
+        
+        return {'status': 'ok'}
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     
     
@@ -144,3 +213,16 @@ class Connect():
         self.cursor.close()
         self.conn.close()
     
+    
+def get_price(first_crypto:str, second_crypto:str):
+    # returns price of pair
+    
+    key = CRYPTO_API_URL + first_crypto + second_crypto
+  
+    data = requests.get(key)
+    data = data.json()
+    
+    try:
+        return float(data['price'])
+    except:
+        return None

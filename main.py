@@ -16,9 +16,26 @@ async def cryptocurrencies():
 
 
 @app.get('/add_crypto')
-async def cryptocurrencies(user_name:str, password:str, crypo_name:str, crypo_short_name:str):
-    if db.find_user(user_name, password)['id'] == 0:
-        return {'status': 'fail',
-                'reason': 'invalid account'}
-    db.add_crypto(crypo_name, crypo_short_name, True)
-    return {'status': 'ok'}
+async def add_crypto(user_name:str, password:str, crypo_name:str, crypo_short_name:str):
+    return db.add_crypto(user_name, password, crypo_name, crypo_short_name)
+
+
+@app.get('/balance')
+async def balance(user_name:str, password:str):
+    return db.get_bal(user_name, password)
+
+
+@app.get('/set_balance')
+async def set_balance(user_name:str, password:str):
+    return db.set_bal(user_name, password)
+
+
+@app.get('/buy')
+async def buy(user_name:str, password:str, first_crypto:str, second_crypto:str, value:float):
+    return db.buy(user_name, password, first_crypto, second_crypto, value)
+    
+    
+@app.get('/sell')
+async def sell(user_name:str, password:str, first_crypto:str, second_crypto:str, value:float):
+    return db.sell(user_name, password, first_crypto, second_crypto, value)
+    
