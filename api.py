@@ -27,18 +27,26 @@ class Connect():
     
     # - - - - - - - - - - - - - - - - - - USERS FUNCS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     def find_user(self, user_name:str, password:str) -> dict:
-        self.cursor.execute("SELECT id, superuser FROM users WHERE username = %s AND password = %s;", (user_name, password))
-        user = self.cursor.fetchone()
         
+        try:
+            self.cursor.execute("SELECT superuser FROM users WHERE username = %s AND password = %s;", (user_name, password))
+            user = self.cursor.fetchone()
+        except:
+            return {'id': 0, 'superuser': 0}
+
         if not user:
             return {'id': 0, 'superuser': 0}
-        return {'id': user[0], 'superuser': user[1]}
+        return {'id': user_name, 'superuser': user[0]}
     
     
     def add_user(self, username:str, password:str) -> None:
         # register
-        self.cursor.execute("INSERT INTO users (username, password) VALUES(%s, %s);", (username, password))
-        self.save_changes()
+        try:
+            self.cursor.execute("INSERT INTO users (username, password) VALUES(%s, %s);", (username, password))
+            self.save_changes()
+        except:
+            return {'status': 'error'}
+        return {'status': 'ok'}
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     
     
@@ -59,7 +67,7 @@ class Connect():
         user = self.find_user(user_name, password)
         if not user['id']:
             return {'status': 'invalid account'}
-        self.cursor.execute("SELECT crypto_id, value FROM balance WHERE user_id = %s" % (user['id']))
+        self.cursor.execute("SELECT crypto_id, value FROM balance WHERE user_id = '%s'" % user['id'])
         
         pretty_bal = {'status': 'ok'}
         for i in self.cursor.fetchall():
@@ -111,6 +119,21 @@ class Connect():
             
         self.save_changes()
         return {'status': 'ok'}
+
+
+    def reload_bal(self, user_name:str, password:str):
+        # set bal to only 100$
+        user = self.find_user(user_name, password)
+        if not user:
+            return {'status': 'invalid account'}
+        
+        balance = self.get_bal(user_name, password)
+        
+        for crypto in balance:
+            self.update_bal(user_name, password, crypto, 0)
+        self.set_bal(user_name, password, 'USDT', 100)
+        return {'status': 'ok'}
+        
     # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
         
         
@@ -217,9 +240,9 @@ class Connect():
 def get_price(first_crypto:str, second_crypto:str):
     # returns price of pair
     
-    key = CRYPTO_API_URL + first_crypto + second_crypto
+    url = CRYPTO_API_URL + first_crypto + second_crypto
   
-    data = requests.get(key)
+    data = requests.get(url)
     data = data.json()
     
     try:
