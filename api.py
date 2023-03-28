@@ -32,11 +32,11 @@ class Connect():
             self.cursor.execute("SELECT superuser FROM users WHERE username = %s AND password = %s;", (user_name, password))
             user = self.cursor.fetchone()
         except:
-            return {'id': 0, 'superuser': 0}
+            return {'status': 'error1', 'id': 0, 'superuser': 0}
 
         if not user:
-            return {'id': 0, 'superuser': 0}
-        return {'id': user_name, 'superuser': user[0]}
+            return {'status': 'error2', 'id': 0, 'superuser': 0}
+        return {'status': 'ok', 'id': user_name, 'superuser': user[0]}
     
     
     def add_user(self, username:str, password:str) -> None:

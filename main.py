@@ -30,6 +30,11 @@ async def register(user_name:str, password:str):
     return db.add_user(user_name, password)
 
 
+@app.get('/user')
+async def user(user_name:str, password:str):
+    return db.find_user(user_name, password)
+
+
 @app.get('/balance')
 async def balance(user_name:str, password:str):
     return db.get_bal(user_name, password)
