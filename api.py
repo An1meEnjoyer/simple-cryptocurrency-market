@@ -1,5 +1,24 @@
+# ---------------------------------------------------------------------------------------------
+# there main api that works with db
+# ------------------------------------------
+# db is postgresql that have this structure:
+# 
+# - - - - - - - - - - - - users - - - - - - - - - - - - - - - - -
+# username  | character varying(30) | not null | PRIMARY KEY
+# password  | character varying(30) | not null |
+# superuser | boolean |
+# 
+# - - - - - - - - - - - - cryptocurrencies - - - - - - - - - - - -
+# name       | character varying(1000) | not null |
+# short_name | character varying(100)  | not null | PRIMARY KEY
+# 
+# - - - - - - - - - - - - balance - - - - - - - - - - - - - - - -
+# id        | integer        | not null | PRIMARY KEY
+# user_id   | character(30)  | not null | FOREIGN KEY -> users(username)
+# crypto_id | character(100) | not null | FOREIGN KEY -> cryptocurrencies(short_name)
+# value     | numeric
+# ---------------------------------------------------------------------------------------------
 import psycopg2
-import json
 import requests
 
 from SETTINGS import POSTGRESS_SETTINGS, CRYPTO_API_URL
@@ -27,20 +46,21 @@ class Connect():
     
     # - - - - - - - - - - - - - - - - - - USERS FUNCS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     def find_user(self, user_name:str, password:str) -> dict:
-        
+        # trying to find user in db
+        # returns error if something wrong
         try:
             self.cursor.execute("SELECT superuser FROM users WHERE username = %s AND password = %s;", (user_name, password))
             user = self.cursor.fetchone()
         except:
-            return {'status': 'error1', 'id': 0, 'superuser': 0}
+            return {'status': 'error', 'id': 0, 'superuser': 0}
 
         if not user:
-            return {'status': 'error2', 'id': 0, 'superuser': 0}
+            return {'status': 'error', 'id': 0, 'superuser': 0}
         return {'status': 'ok', 'id': user_name, 'superuser': user[0]}
     
     
     def add_user(self, username:str, password:str) -> None:
-        # register
+        # register (add accaunt to db)
         try:
             self.cursor.execute("INSERT INTO users (username, password) VALUES(%s, %s);", (username, password))
             self.save_changes()
@@ -64,6 +84,8 @@ class Connect():
        
     # - - - - - - - - - - - - - - - - - - BALANCE FUNCS - - - - - - - - - - - - - - - - - - - - - - - - - - -
     def get_bal(self, user_name:str, password:str) -> dict:
+        # returns dict with all coins on accaunt
+        # like {'BTC': 3, 'ETH': 0.5}
         user = self.find_user(user_name, password)
         if not user['id']:
             return {'status': 'invalid account'}
@@ -77,6 +99,7 @@ class Connect():
     
     
     def create_bal(self, user_name:str, password:str, crypto_id:str, balance:float) -> dict:
+        # creating coin balance in db to user
         user = self.find_user(user_name, password)
         if not user:
             return {'status': 'invalid account'}
@@ -91,6 +114,7 @@ class Connect():
         
         
     def update_bal(self, user_name:str, password:str, crypto_id:str, balance:float) -> dict:
+        # changes value in balance
         user = self.find_user(user_name, password)
         if not user:
             return {'status': 'invalid account'}
@@ -107,7 +131,7 @@ class Connect():
 
 
     def set_bal(self, user_name:str, password:str, crypto_id:str = 'USDT', balance:float = 100) -> dict:
-        # set balance
+        # set balance or creating if it wasn't exists before
         user = self.find_user(user_name, password)
         if not user:
             return {'status': 'invalid account'}
@@ -122,7 +146,7 @@ class Connect():
 
 
     def reload_bal(self, user_name:str, password:str):
-        # set bal to only 100$
+        # set bal to only 100$ (deleting all coins and set USDT to 100)
         user = self.find_user(user_name, password)
         if not user:
             return {'status': 'invalid account'}
@@ -238,7 +262,7 @@ class Connect():
     
     
 def get_price(first_crypto:str, second_crypto:str):
-    # returns price of pair
+    # returns price of pair using third party api
     
     url = CRYPTO_API_URL + first_crypto + second_crypto
   

@@ -1,3 +1,6 @@
+# ---------------------------------------
+# there is funcs that works with requests
+# ---------------------------------------
 from fastapi import FastAPI
 from api import Connect, get_price
 
